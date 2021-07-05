@@ -1,4 +1,59 @@
 import numpy as np
+from .direction import Direction
+from itertools import product
+
+EMPTY = 2359
+FLOOR = 2379
+# I'm guessing about 63-65
+WALLS = set([2360, 2361, 2362, 2363, 2364, 2365])
+MAP_SIZE = (21, 79)
+
+
+def not_traversable(point, glyphs, seen):
+    glyph = glyphs[point]
+    if glyph in WALLS:
+        return True
+    if glyph == EMPTY and seen[point]:
+        return True
+    return False
+
+
+def get_player_loc(obs):
+    # blstats shows it in x,y so reverse
+    return obs["blstats"][:2][::-1]
+
+
+class NLEState:
+
+    def __init__(self, radius=4):
+        self.radius = radius
+        self.seen = np.zeros(MAP_SIZE)
+        self.state_lookup = {state: i for i, state in enumerate(self.enumerate_states(radius))}
+
+    def reset(self):
+        self.seen = np.zeros(MAP_SIZE)
+
+    @staticmethod
+    def enumerate_states(radius):
+        dists = list(range(1, radius+1))
+        for state in product(dists, dists, dists, dists):
+            yield tuple(state)
+
+    def wall_search(self, loc, glyphs, direction):
+        for r in range(1, self.radius+1):
+            loc = direction.apply(loc)
+            stopped = loc[0] < 0 or loc[0] >= MAP_SIZE[0] or loc[1] < 0 or loc[1] >= MAP_SIZE[1]
+            if not stopped:
+                stopped = not_traversable(loc, glyphs, self.seen)
+            if stopped:
+                return r
+        return r
+
+    def construct_state_from_obs(self, obs):
+        player = get_player_loc(obs)
+        self.seen[player[0]-1:player[0]+2, player[1]-1:player[1]+2] = 1
+
+        return tuple(self.wall_search(player, obs["glyphs"], d) for d in Direction.cardinal_directions())
 
 
 class QLearner:
