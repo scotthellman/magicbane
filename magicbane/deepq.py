@@ -5,6 +5,9 @@ import torch.nn.functional as F
 from .datastructures import CircularBuffer
 import numpy as np
 
+from torch.utils.tensorboard import SummaryWriter
+
+#writer = SummaryWriter()
 MAP_SIZE = (21, 79)
 
 MAX_GLYPH = 5991
@@ -25,7 +28,7 @@ class DeepQAgent:
         self.gamma = gamma
         self.C = C
         self.memory = CircularBuffer(memory_size)
-        self.Q = DeepQNetwork()
+        self.Q = DeepQNetwork(num_actions)
         self.target_Q = DeepQNetwork(num_actions)
         self.minibatch_size = minibatch_size
         self.loss = nn.MSELoss()
@@ -41,6 +44,8 @@ class DeepQAgent:
         self.previous_action = None
         self.steps = 0
         self.update_target_Q()
+        self.total_loss = 0
+        self.total_reward = 0
 
     def update_target_Q(self):
         self.target_Q.load_state_dict(self.Q.state_dict())
@@ -50,11 +55,15 @@ class DeepQAgent:
         # TODO: handle unfull memory
         state = state.unsqueeze(0)
         self.steps += 1
-        if self.steps == self.C:
-            self.steps = 0
+        if self.steps % self.C == self.C - 1:
             self.update_target_Q()
+            print(f"Total loss {self.total_loss}, total reward {self.total_reward}")
+            self.total_loss = 0
+            self.total_reward = 0
         if self.previous_state is not None:
             self.memory.insert((self.previous_state, self.previous_action, reward, state, terminal_state))
+            #writer.add_scalar("Reward", reward, self.steps)
+            self.total_reward += reward
         if len(self.memory) > 2*self.minibatch_size:
 
             # numpy doesn't like indexing into self.memory directly for some reason
@@ -62,10 +71,10 @@ class DeepQAgent:
             minibatch_states = [self.memory[i] for i in minibatch_indices]
             minibatch_y = []
             minibatch_X = []
-            minibatch_actions = []
-            for p, a, r, s, t in minibatch_states:
+            minibatch_action_mask = torch.zeros([self.minibatch_size, self.num_actions], dtype=torch.bool)
+            for m_idx, (p, a, r, s, t) in enumerate(minibatch_states):
                 minibatch_X.append(p)
-                minibatch_actions.append(a)
+                minibatch_action_mask[m_idx, a] = True
                 if t:
                     minibatch_y.append(r)
                 else:
@@ -73,14 +82,14 @@ class DeepQAgent:
 
                     future_reward = self.gamma * future_value
                     minibatch_y.append(future_reward)
-            minibatch_actions = torch.LongTensor(minibatch_actions)
             minibatch_y = torch.FloatTensor(minibatch_y)
             full_preds = self.Q(torch.cat(minibatch_X))
-            target_action_preds = torch.index_select(full_preds, 1, minibatch_actions)
+            target_action_preds = torch.masked_select(full_preds, minibatch_action_mask)
             self.opt.zero_grad()
             loss = self.loss(target_action_preds, minibatch_y)
             self.opt.step()
-            print("loss was", loss)
+            self.total_loss += loss
+            #writer.add_scalar("Loss", loss, self.steps)
 
         if np.random.random() < self.epsilon:
             action = np.random.randint(0, self.num_actions)
@@ -90,7 +99,6 @@ class DeepQAgent:
         self.previous_action = action
         self.previous_state = state
         return action
-
 
 
 class DeepQNetwork(nn.Module):

@@ -4,18 +4,18 @@ import time
 from magicbane import qlearning
 from magicbane import direction
 from magicbane import deepq
+import numpy as np
 
 EPISODES = 100
-STEPS = 5000
+STEPS = 10000
+model_out = "nle_deepq.params"
 
 
 if __name__ == "__main__":
-    import numpy as np
     env = gym.make("NetHackScore-v0")
     obs = env.reset()  # each reset generates a new dungeon
     state_maker = qlearning.NLEState(radius=6)
-    actions = [d.action() for d in direction.Direction]
-    agent = deepq.DeepQAgent(len(actions), C=100)
+    agent = deepq.DeepQAgent(env.action_space.n, C=1000)
     reward = None
     rewards = []
     for ep in range(EPISODES):
@@ -24,7 +24,7 @@ if __name__ == "__main__":
         done = False
         for step in range(STEPS):
             state = agent.build_state(obs)
-            action = actions[agent.step(state, reward, done)]
+            action = agent.step(state, reward, done)
             if done:
                 break
             obs, reward, done, info = env.step(action)
