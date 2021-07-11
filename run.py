@@ -3,6 +3,7 @@ import nle
 import time
 from magicbane import qlearning
 from magicbane import direction
+from magicbane import deepq
 
 EPISODES = 100
 STEPS = 5000
@@ -14,8 +15,7 @@ if __name__ == "__main__":
     obs = env.reset()  # each reset generates a new dungeon
     state_maker = qlearning.NLEState(radius=6)
     actions = [d.action() for d in direction.Direction]
-    agent = qlearning.QLearner(len(state_maker.state_lookup), len(actions),
-                               alpha=0.05, gamma=0.9, lam=0.75, epsilon=0.9)
+    agent = deepq.DeepQAgent(len(actions))
     reward = None
     rewards = []
     for ep in range(EPISODES):
@@ -31,7 +31,7 @@ if __name__ == "__main__":
                 reward = np.sum(state_maker.seen) - amount_seen
                 total_reward += reward
             obs_number = state_maker.state_lookup[agent_obs]
-            action = actions[agent.step(obs_number, reward)]
+            action = actions[agent.step(obs_number, reward, done)]
             if done:
                 break
             obs, reward, done, info = env.step(action)

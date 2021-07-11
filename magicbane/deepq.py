@@ -7,6 +7,8 @@ import numpy as np
 
 MAP_SIZE = (21, 79)
 
+MAX_GLYPH = 5991
+
 
 class DeepQAgent:
 
@@ -41,22 +43,23 @@ class DeepQAgent:
             self.steps = 0
             self.update_target_Q()
         self.memory.insert((self.previous_state, self.previous_action, reward, state, terminal_state))
-        minibatch_states = np.random.choice(self.memory, size=self.minibatch_size, replace=False)
-        minibatch_rewards = []
-        for p, a, r, s, t in minibatch_states:
-            if t:
-                minibatch_rewards.append(r)
-            else:
-                future_value = torch.max(self.target_Q(s))
+        if len(self.memory) > 2*self.minibatch_size:
+            minibatch_states = np.random.choice(self.memory, size=self.minibatch_size, replace=False)
+            minibatch_rewards = []
+            for p, a, r, s, t in minibatch_states:
+                if t:
+                    minibatch_rewards.append(r)
+                else:
+                    future_value = torch.max(self.target_Q(s))
 
-                future_reward = self.gamma * future_value
-                minibatch_rewards.append(future_reward)
-        pred = self.Q(minibatch_states)
-        self.opt.zero_grad()
-        loss = self.loss(pred, minibatch_rewards)
-        self.opt.step()
+                    future_reward = self.gamma * future_value
+                    minibatch_rewards.append(future_reward)
+            pred = self.Q(minibatch_states)
+            self.opt.zero_grad()
+            loss = self.loss(pred, minibatch_rewards)
+            self.opt.step()
 
-        if np.random() < self.epsilon:
+        if np.random.random() < self.epsilon:
             action = np.random.randint(0, self.num_actions+1)
         else:
             q_vals = self.Q(state)
@@ -72,7 +75,10 @@ class DeepQNetwork(nn.Module):
     def __init__(self, num_actions=8):
         super().__init__()
 
-        self.conv1 = nn.Conv2d(1, 32, 5, 1)
+        self.emb = nn.Embedding(MAX_GLYPH, 16)
+
+        # TODO: these should be 3d since we're embedding
+        self.conv1 = nn.Conv2d(16, 32, 5, 1)
         self.conv2 = nn.Conv2d(32, 64, 5, 1)
 
         self.ff1 = nn.Linear(5888, 256)
@@ -80,6 +86,7 @@ class DeepQNetwork(nn.Module):
 
     def forward(self, x):
         print("start", x.shape)
+        x = self.emb(x)
         x = self.conv1(x)
         print("conv1", x.shape)
         x = F.relu(x)
@@ -105,6 +112,6 @@ class DeepQNetwork(nn.Module):
 
 if __name__ == "__main__":
     random_data = torch.rand((1, 1, MAP_SIZE[0], MAP_SIZE[1]))
-    net = DeepQNetwork()
-    result = net(random_data)
-    print(result)
+    net = DeepQAgent()
+    #result = net(random_data)
+    #print(result)
