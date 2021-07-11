@@ -15,27 +15,19 @@ if __name__ == "__main__":
     obs = env.reset()  # each reset generates a new dungeon
     state_maker = qlearning.NLEState(radius=6)
     actions = [d.action() for d in direction.Direction]
-    agent = deepq.DeepQAgent(len(actions))
+    agent = deepq.DeepQAgent(len(actions), C=100)
     reward = None
     rewards = []
     for ep in range(EPISODES):
         env.reset()
         state_maker.reset()
         done = False
-        total_reward = 0
         for step in range(STEPS):
-            if reward is not None:
-                amount_seen = np.sum(state_maker.seen)
-            agent_obs = state_maker.construct_state_from_obs(obs)
-            if reward is not None:
-                reward = np.sum(state_maker.seen) - amount_seen
-                total_reward += reward
-            obs_number = state_maker.state_lookup[agent_obs]
-            action = actions[agent.step(obs_number, reward, done)]
+            state = agent.build_state(obs)
+            action = actions[agent.step(state, reward, done)]
             if done:
                 break
             obs, reward, done, info = env.step(action)
-        rewards.append(total_reward)
         env.render()
     env.close()
     print(rewards)
