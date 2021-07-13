@@ -7,10 +7,6 @@ import numpy as np
 
 from torch.utils.tensorboard import SummaryWriter
 
-#writer = SummaryWriter()
-MAP_SIZE = (21, 79)
-
-MAX_GLYPH = 5991
 
 
 # FIXME: this is just a bandaid
@@ -21,15 +17,19 @@ os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
 class DeepQAgent:
 
-    def __init__(self, num_actions, epsilon=0.1, gamma=0.99, C=1000,
-                 memory_size=2000, lr=0.0001, minibatch_size=8):
+    def __init__(self, num_actions, map_size, vocab_size, max_epsilon=0.95, min_epsilon=0.1,
+                 epsilon_decay_window=20000, gamma=0.99, C=1000, memory_size=2000, lr=0.0001,
+                 minibatch_size=8, kernel_size=5):
         self.num_actions = num_actions
-        self.epsilon = epsilon
+        self.epsilon = max_epsilon
+        self.min_epsilon = min_epsilon
+        self.epsilon_step = (max_epsilon - min_epsilon) / 20
+        self.epsilon_reduction_frequency = epsilon_decay_window/20
         self.gamma = gamma
         self.C = C
         self.memory = CircularBuffer(memory_size)
-        self.Q = DeepQNetwork(num_actions)
-        self.target_Q = DeepQNetwork(num_actions)
+        self.Q = DeepQNetwork(num_actions, map_size, vocab_size, kernel_size=kernel_size)
+        self.target_Q = DeepQNetwork(num_actions, map_size, vocab_size, kernel_size=kernel_size)
         self.minibatch_size = minibatch_size
         self.loss = nn.MSELoss()
         self.opt = torch.optim.Adam(self.Q.parameters(), lr=lr)
@@ -55,6 +55,11 @@ class DeepQAgent:
         # TODO: handle unfull memory
         state = state.unsqueeze(0)
         self.steps += 1
+        if self.steps % self.epsilon_reduction_frequency == 0 and self.epsilon > self.min_epsilon:
+            self.epsilon -= self.epsilon_step
+            print("Reducing epsilon to", self.epsilon)
+            if self.epsilon < self.min_epsilon:
+                self.epsilon = self.min_epsilon
         if self.steps % self.C == self.C - 1:
             self.update_target_Q()
             print(f"Total loss {self.total_loss}, total reward {self.total_reward}")
@@ -95,7 +100,7 @@ class DeepQAgent:
             action = np.random.randint(0, self.num_actions)
         else:
             q_vals = self.Q(state)
-            action = torch.argmax(q_vals)
+            action = torch.argmax(q_vals).item()
         self.previous_action = action
         self.previous_state = state
         return action
@@ -103,16 +108,24 @@ class DeepQAgent:
 
 class DeepQNetwork(nn.Module):
 
-    def __init__(self, num_actions=8, emb_size=16):
+    def __init__(self, num_actions, map_size, vocab_size, kernel_size=5, emb_size=16):
         super().__init__()
 
-        self.emb = nn.Embedding(MAX_GLYPH, emb_size)
+        self.emb = nn.Embedding(vocab_size, emb_size)
 
-        # TODO: these should be 3d since we're embedding
-        self.conv1 = nn.Conv2d(emb_size, 32, 5, 1)
-        self.conv2 = nn.Conv2d(32, 64, 5, 1)
+        first_channels = 32
+        final_channels = 32
 
-        self.ff1 = nn.Linear(5888, 256)
+        # TODO: should these be 3d since we're embedding?
+        self.conv1 = nn.Conv2d(emb_size, first_channels, kernel_size, 1)
+        self.conv2 = nn.Conv2d(first_channels, final_channels, kernel_size, 1)
+
+
+        final_height = (map_size[0] - 2*(kernel_size-1))//3
+        final_width = (map_size[1] - 2*(kernel_size-1))//3
+        conv_neurons = final_channels * final_height * final_width
+
+        self.ff1 = nn.Linear(conv_neurons, 256)
         self.ff2 = nn.Linear(256, num_actions)
 
     def forward(self, x):
