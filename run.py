@@ -1,4 +1,5 @@
 import gym
+import pickle
 import copy
 import nle
 import time
@@ -39,12 +40,14 @@ def get_frozen_grid(env):
 
 
 nle_config = {
-            "gym": "NetHackScore-v0",
+            "gym": "NetHackChallenge-v0",
             "map_size": (21, 79),
             "state_extractor": nle_state_builder,
-            "C": 1000,
+            "C": 10000,
+            "memory_size": 20000,
             "vocab_size": 5991,
-            "kernel_size": 5
+            "kernel_size": 5,
+            "epsilon_decay_window": 100000
         }
 
 # unfortunately this one requires manual intervention
@@ -65,10 +68,20 @@ config = nle_config
 if __name__ == "__main__":
     env = gym.make(config["gym"])
     obs = env.reset()  # each reset generates a new dungeon
-    agent = deepq.DeepQAgent(env.action_space.n, C=config["C"], map_size=config["map_size"],
-                             vocab_size=config["vocab_size"], kernel_size=config["kernel_size"])
+    agent = deepq.DeepQAgent(env.action_space.n, **config)
     reward = None
     rewards = []
+    prev_obs = ""
+    replay_file = "/Users/scott/repos/magicbane/nle_data/play_data/frames.pkl"
+    with open(replay_file, "rb") as f:
+        replay_frames = pickle.load(f)
+    print(f"agent initialized with {len(agent.memory)} memory")
+    for frame in replay_frames:
+        converted_frame = [torch.from_numpy(frame[0]).long(), frame[1], frame[2], torch.from_numpy(frame[3]).long(), frame[4]]
+        converted_frame[0] = converted_frame[0].unsqueeze(0)
+        converted_frame[3] = converted_frame[3].unsqueeze(0)
+        agent.memory.insert(tuple(converted_frame))
+    print(f"expert replay puts us at {len(agent.memory)}")
     for ep in range(EPISODES):
         env.reset()
         done = False
@@ -77,11 +90,14 @@ if __name__ == "__main__":
             state = config["state_extractor"](obs)
             action = agent.step(state, reward, done)
             if done:
+                print(prev_obs)
                 break
+            prev_obs = env.render(mode="ansi")
             obs, reward, done, info = env.step(action)
             total_reward += reward
-            if step %1000 == 0:
-                env.render()
         rewards.append(total_reward)
+        with open("model.pkl", "wb") as f:
+            # TODO: in the long run this is the wrong way to save
+            pickle.dump(agent, f)
     env.close()
     print(rewards)

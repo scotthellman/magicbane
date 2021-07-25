@@ -19,7 +19,9 @@ class DeepQAgent:
 
     def __init__(self, num_actions, map_size, vocab_size, max_epsilon=0.95, min_epsilon=0.1,
                  epsilon_decay_window=20000, gamma=0.99, C=1000, memory_size=2000, lr=0.0001,
-                 minibatch_size=8, kernel_size=5):
+                 minibatch_size=8, kernel_size=5, **kwargs):
+        print("Ignoring these arguments:", kwargs)
+        self.report_period = 1000
         self.num_actions = num_actions
         self.epsilon = max_epsilon
         self.min_epsilon = min_epsilon
@@ -34,6 +36,7 @@ class DeepQAgent:
         self.loss = nn.MSELoss()
         self.opt = torch.optim.Adam(self.Q.parameters(), lr=lr)
         self.reset()
+
 
     def build_state(self, obs):
         glyphs = obs["glyphs"]
@@ -52,7 +55,6 @@ class DeepQAgent:
 
 
     def step(self, state, reward, terminal_state):
-        # TODO: handle unfull memory
         state = state.unsqueeze(0)
         self.steps += 1
         if self.steps % self.epsilon_reduction_frequency == 0 and self.epsilon > self.min_epsilon:
@@ -62,6 +64,7 @@ class DeepQAgent:
                 self.epsilon = self.min_epsilon
         if self.steps % self.C == self.C - 1:
             self.update_target_Q()
+        if self.steps%self.report_period == 0:
             print(f"Total loss {self.total_loss}, total reward {self.total_reward}")
             self.total_loss = 0
             self.total_reward = 0
